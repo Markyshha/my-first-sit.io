@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Paint WP</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -ms-tap-highlight-color: transparent;
+        }
+        
+        body {
+            overflow: hidden;
+            background: #f0f0f0;
+            -ms-touch-action: none;
+            touch-action: none;
+            font-family: Arial, sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            background: white;
+            width: 100%;
+            height: calc(100vh - 70px);
+            -ms-touch-action: none;
+            touch-action: none;
+        }
+
+        #size-control {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            height: 30px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 15px;
+            padding: 0 15px;
+            display: -ms-flexbox;
+            display: flex;
+            -ms-flex-align: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        #size-slider {
+            width: 100%;
+            margin: 0;
+            -webkit-appearance: none;
+            -ms-appearance: none;
+            appearance: none;
+            height: 4px;
+            background: white;
+            outline: none;
+        }
+
+        #size-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #0078d7;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        #size-slider::-ms-thumb {
+            width: 20px;
+            height: 20px;
+            background: #0078d7;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            background: #333;
+            display: -ms-flexbox;
+            display: flex;
+            -ms-flex-align: center;
+            align-items: center;
+            -ms-flex-pack: center;
+            justify-content: center;
+            padding: 0 5px;
+            overflow-x: auto;
+        }
+
+        .tool {
+            width: 40px;
+            height: 40px;
+            min-width: 40px;
+            background: #555;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 16px;
+            margin: 0 3px;
+            display: -ms-flexbox;
+            display: flex;
+            -ms-flex-align: center;
+            align-items: center;
+            -ms-flex-pack: center;
+            justify-content: center;
+            -ms-touch-action: manipulation;
+            touch-action: manipulation;
+        }
+
+        .tool.active {
+            background: #0078d7;
+        }
+
+        #color-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid white;
+            margin: 0 5px;
+        }
+
+        #color-panel {
+            display: none;
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            background: #333;
+            padding: 10px;
+            border-radius: 8px;
+            -ms-flex-wrap: wrap;
+            flex-wrap: wrap;
+            -ms-flex-pack: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .color {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            margin: 3px;
+            border: 2px solid #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="size-control">
+        <input type="range" id="size-slider" min="1" max="30" value="5">
+    </div>
+    
+    <canvas id="canvas"></canvas>
+    
+    <div id="controls">
+        <button class="tool active" id="brush-btn">✏️</button>
+        <button class="tool" id="eraser-btn">🧽</button>
+        <button class="tool" id="line-btn">📏</button>
+        <button class="tool" id="rect-btn">⬛</button>
+        <button class="tool" id="circle-btn">🔵</button>
+        <div id="color-btn"></div>
+        <button class="tool" id="clear-btn">❌</button>
+    </div>
+
+    <div id="color-panel">
+        <div class="color" style="background:#000000;"></div>
+        <div class="color" style="background:#FF0000;"></div>
+        <div class="color" style="background:#00FF00;"></div>
+        <div class="color" style="background:#0000FF;"></div>
+        <div class="color" style="background:#FFFF00;"></div>
+        <div class="color" style="background:#FF00FF;"></div>
+        <div class="color" style="background:#00FFFF;"></div>
+        <div class="color" style="background:#FFFFFF;"></div>
+        <button id="close-colors" style="width:100%;margin-top:8px;padding:6px;background:#0078d7;color:white;border:none;border-radius:4px;">
+            Закрыть
+        </button>
+    </div>
+
+    <script>
+        // Инициализация
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let startX = 0;
+        let startY = 0;
+        let currentColor = '#000000';
+        let currentSize = 5;
+        let currentTool = 'brush';
+        let tempCanvas = document.createElement('canvas');
+        let tempCtx = tempCanvas.getContext('2d');
+
+        // Размеры холста
+        function resizeCanvas() {
+            const canvasHeight = window.innerHeight - 70;
+            canvas.width = window.innerWidth;
+            canvas.height = canvasHeight;
+            canvas.style.width = window.innerWidth + 'px';
+            canvas.style.height = canvasHeight + 'px';
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            
+            // Заполняем белым фоном
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            tempCtx.fillStyle = 'white';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Цвета
+        document.getElementById('color-btn').style.background = currentColor;
+        document.getElementById('color-btn').onclick = function() {
+            document.getElementById('color-panel').style.display = 'flex';
+        };
+        
+        document.getElementById('close-colors').onclick = function() {
+            document.getElementById('color-panel').style.display = 'none';
+        };
+        
+        var colors = document.querySelectorAll('.color');
+        for (var i = 0; i < colors.length; i++) {
+            colors[i].onclick = function() {
+                currentColor = this.style.background;
+                document.getElementById('color-btn').style.background = currentColor;
+                document.getElementById('color-panel').style.display = 'none';
+            };
+        }
+
+        // Размер кисти
+        document.getElementById('size-slider').oninput = function() {
+            currentSize = this.value;
+        };
+
+        // Инструменты
+        function setTool(tool) {
+            currentTool = tool;
+            var tools = document.querySelectorAll('.tool');
+            for (var i = 0; i < tools.length; i++) {
+                tools[i].classList.remove('active');
+            }
+            event.target.classList.add('active');
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        document.getElementById('brush-btn').onclick = function() { setTool('brush'); };
+        document.getElementById('eraser-btn').onclick = function() { setTool('eraser'); };
+        document.getElementById('line-btn').onclick = function() { setTool('line'); };
+        document.getElementById('rect-btn').onclick = function() { setTool('rect'); };
+        document.getElementById('circle-btn').onclick = function() { setTool('circle'); };
+        document.getElementById('clear-btn').onclick = function() {
+            if (confirm('Очистить холст?')) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            }
+        };
+
+        // Получение позиции
+        function getPosition(e) {
+            var rect = canvas.getBoundingClientRect();
+            var x, y;
+            
+            if (e.clientX !== undefined) {
+                // Мышь
+                x = e.clientX;
+                y = e.clientY;
+            } else if (e.touches && e.touches[0]) {
+                // Касание
+                x = e.touches[0].clientX;
+                y = e.touches[0].clientY;
+            } else if (e.pageX !== undefined) {
+                // MSPointer
+                x = e.pageX;
+                y = e.pageY;
+            }
+            
+            return [x - rect.left, y - rect.top];
+        }
+
+        // Рисование
+        function startDraw(e) {
+            isDrawing = true;
+            var pos = getPosition(e);
+            lastX = startX = pos[0];
+            lastY = startY = pos[1];
+            
+            if (currentTool === 'brush' || currentTool === 'eraser') {
+                ctx.beginPath();
+                ctx.arc(lastX, lastY, currentSize/2, 0, Math.PI*2);
+                ctx.fillStyle = currentTool === 'eraser' ? 'white' : currentColor;
+                ctx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                ctx.fill();
+            } else {
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(canvas, 0, 0);
+            }
+        }
+
+        function drawing(e) {
+            if (!isDrawing) return;
+            var pos = getPosition(e);
+            
+            if (currentTool === 'brush' || currentTool === 'eraser') {
+                ctx.lineWidth = currentSize;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = currentTool === 'eraser' ? 'white' : currentColor;
+                ctx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(pos[0], pos[1]);
+                ctx.stroke();
+                
+                lastX = pos[0];
+                lastY = pos[1];
+            } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(tempCanvas, 0, 0);
+                
+                ctx.lineWidth = currentSize;
+                ctx.strokeStyle = currentColor;
+                ctx.globalCompositeOperation = 'source-over';
+                
+                switch(currentTool) {
+                    case 'line':
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(pos[0], pos[1]);
+                        ctx.stroke();
+                        break;
+                        
+                    case 'rect':
+                        ctx.beginPath();
+                        ctx.rect(startX, startY, pos[0]-startX, pos[1]-startY);
+                        ctx.stroke();
+                        break;
+                        
+                    case 'circle':
+                        var radius = Math.sqrt(Math.pow(pos[0]-startX, 2) + Math.pow(pos[1]-startY, 2));
+                        ctx.beginPath();
+                        ctx.arc(startX, startY, radius, 0, Math.PI*2);
+                        ctx.stroke();
+                        break;
+                }
+            }
+        }
+
+        function endDraw() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            if (currentTool !== 'brush' && currentTool !== 'eraser') {
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(canvas, 0, 0);
+            }
+        }
+
+        // Обработчики событий
+        function addEventListeners() {
+            // Стандартные события
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', drawing);
+            canvas.addEventListener('mouseup', endDraw);
+            canvas.addEventListener('mouseout', endDraw);
+            
+            // События касания
+            canvas.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                startDraw(e.touches[0]);
+            }, {passive: false});
+            
+            canvas.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+                drawing(e.touches[0]);
+            }, {passive: false});
+            
+            canvas.addEventListener('touchend', endDraw);
+            
+            // События MSPointer (для Windows Phone)
+            if (window.navigator.msPointerEnabled) {
+                canvas.addEventListener('MSPointerDown', startDraw);
+                canvas.addEventListener('MSPointerMove', drawing);
+                canvas.addEventListener('MSPointerUp', endDraw);
+                canvas.addEventListener('MSPointerCancel', endDraw);
+            }
+        }
+
+        // Инициализация
+        addEventListeners();
+        tempCtx.fillStyle = 'white';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    </script>
+</body>
+</html>
