@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Paint WP</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            overflow: hidden;
+            background: #f0f0f0;
+            touch-action: none;
+            font-family: Arial, sans-serif;
+        }
+
+        #canvas {
+            display: block;
+            background: white;
+            width: 100%;
+            height: calc(100vh - 70px);
+            touch-action: none;
+        }
+
+        #size-control {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            height: 30px;
+            background: rgba(0,0,0,0.7);
+            border-radius: 15px;
+            padding: 0 15px;
+            display: flex;
+            align-items: center;
+            z-index: 100;
+        }
+
+        #size-slider {
+            width: 100%;
+            margin: 0;
+            -webkit-appearance: none;
+            height: 4px;
+            background: white;
+            outline: none;
+        }
+
+        #size-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #0078d7;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        #controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            background: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 5px;
+            overflow-x: auto;
+        }
+
+        .tool {
+            width: 40px;
+            height: 40px;
+            min-width: 40px;
+            background: #555;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 16px;
+            margin: 0 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            touch-action: manipulation;
+        }
+
+        .tool.active {
+            background: #0078d7;
+        }
+
+        #color-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid white;
+            margin: 0 5px;
+        }
+
+        #color-panel {
+            display: none;
+            position: fixed;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            background: #333;
+            padding: 10px;
+            border-radius: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .color {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            margin: 3px;
+            border: 2px solid #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="size-control">
+        <input type="range" id="size-slider" min="1" max="30" value="5">
+    </div>
+    
+    <canvas id="canvas"></canvas>
+    
+    <div id="controls">
+        <button class="tool active" id="brush-btn">✏️</button>
+        <button class="tool" id="eraser-btn">🧽</button>
+        <button class="tool" id="line-btn">📏</button>
+        <button class="tool" id="rect-btn">⬛</button>
+        <button class="tool" id="circle-btn">🔵</button>
+        <div id="color-btn"></div>
+        <button class="tool" id="clear-btn">❌</button>
+    </div>
+
+    <div id="color-panel">
+        <div class="color" style="background:#000000;"></div>
+        <div class="color" style="background:#FF0000;"></div>
+        <div class="color" style="background:#00FF00;"></div>
+        <div class="color" style="background:#0000FF;"></div>
+        <div class="color" style="background:#FFFF00;"></div>
+        <div class="color" style="background:#FF00FF;"></div>
+        <div class="color" style="background:#00FFFF;"></div>
+        <div class="color" style="background:#FFFFFF;"></div>
+        <button id="close-colors" style="width:100%;margin-top:8px;padding:6px;background:#0078d7;color:white;border:none;border-radius:4px;">
+            Закрыть
+        </button>
+    </div>
+
+    <script>
+        // Инициализация
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let startX = 0;
+        let startY = 0;
+        let currentColor = '#000000';
+        let currentSize = 5;
+        let currentTool = 'brush';
+        let tempCanvas = document.createElement('canvas');
+        let tempCtx = tempCanvas.getContext('2d');
+
+        // Размеры холста
+        function resizeCanvas() {
+            const canvasHeight = window.innerHeight - 70; // только нижняя панель
+            canvas.width = window.innerWidth;
+            canvas.height = canvasHeight;
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Цвета
+        document.getElementById('color-btn').style.background = currentColor;
+        document.getElementById('color-btn').onclick = () => {
+            document.getElementById('color-panel').style.display = 'flex';
+        };
+        
+        document.getElementById('close-colors').onclick = () => {
+            document.getElementById('color-panel').style.display = 'none';
+        };
+        
+        document.querySelectorAll('.color').forEach(color => {
+            color.onclick = function() {
+                currentColor = this.style.background;
+                document.getElementById('color-btn').style.background = currentColor;
+                document.getElementById('color-panel').style.display = 'none';
+            };
+        });
+
+        // Размер кисти
+        document.getElementById('size-slider').oninput = function() {
+            currentSize = this.value;
+        };
+
+        // Инструменты
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        document.getElementById('brush-btn').onclick = () => setTool('brush');
+        document.getElementById('eraser-btn').onclick = () => setTool('eraser');
+        document.getElementById('line-btn').onclick = () => setTool('line');
+        document.getElementById('rect-btn').onclick = () => setTool('rect');
+        document.getElementById('circle-btn').onclick = () => setTool('circle');
+        document.getElementById('clear-btn').onclick = () => {
+            if (confirm('Очистить холст?')) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.fillStyle = 'white';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            }
+        };
+
+        // Рисование
+        function startDraw(e) {
+            isDrawing = true;
+            const pos = getPosition(e);
+            [lastX, lastY] = [startX, startY] = pos;
+            
+            if (currentTool === 'brush' || currentTool === 'eraser') {
+                ctx.beginPath();
+                ctx.arc(lastX, lastY, currentSize/2, 0, Math.PI*2);
+                ctx.fillStyle = currentTool === 'eraser' ? 'white' : currentColor;
+                ctx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                ctx.fill();
+            } else {
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(canvas, 0, 0);
+            }
+        }
+
+        function drawing(e) {
+            if (!isDrawing) return;
+            const pos = getPosition(e);
+            
+            if (currentTool === 'brush' || currentTool === 'eraser') {
+                ctx.lineWidth = currentSize;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = currentTool === 'eraser' ? 'white' : currentColor;
+                ctx.globalCompositeOperation = currentTool === 'eraser' ? 'destination-out' : 'source-over';
+                
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(pos[0], pos[1]);
+                ctx.stroke();
+                
+                [lastX, lastY] = pos;
+            } else {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(tempCanvas, 0, 0);
+                
+                ctx.lineWidth = currentSize;
+                ctx.strokeStyle = currentColor;
+                ctx.globalCompositeOperation = 'source-over';
+                
+                switch(currentTool) {
+                    case 'line':
+                        ctx.beginPath();
+                        ctx.moveTo(startX, startY);
+                        ctx.lineTo(pos[0], pos[1]);
+                        ctx.stroke();
+                        break;
+                        
+                    case 'rect':
+                        ctx.beginPath();
+                        ctx.rect(startX, startY, pos[0]-startX, pos[1]-startY);
+                        ctx.stroke();
+                        break;
+                        
+                    case 'circle':
+                        const radius = Math.sqrt(Math.pow(pos[0]-startX, 2) + Math.pow(pos[1]-startY, 2));
+                        ctx.beginPath();
+                        ctx.arc(startX, startY, radius, 0, Math.PI*2);
+                        ctx.stroke();
+                        break;
+                }
+            }
+        }
+
+        function endDraw() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            if (currentTool !== 'brush' && currentTool !== 'eraser') {
+                tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                tempCtx.drawImage(canvas, 0, 0);
+            }
+        }
+
+        function getPosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX || (e.touches && e.touches[0].clientX);
+            const y = e.clientY || (e.touches && e.touches[0].clientY);
+            return [x - rect.left, y - rect.top];
+        }
+
+        // События
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', drawing);
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('mouseout', endDraw);
+        
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startDraw(e.touches[0]);
+        }, {passive: false});
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            drawing(e.touches[0]);
+        }, {passive: false});
+        
+        canvas.addEventListener('touchend', endDraw);
+
+        // Инициализация начального состояния
+        tempCtx.fillStyle = 'white';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    </script>
+</body>
+</html>
